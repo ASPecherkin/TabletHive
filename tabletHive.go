@@ -4,13 +4,15 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"runtime/pprof"
 	"strings"
 	"sync"
-	"log"
+	"time"
 )
 
 type ServiceObject struct {
@@ -56,64 +58,64 @@ type Ride struct {
 }
 
 type HiveConfig struct {
-    ServerEndpoint string `json:"endpoint_url"`
-    TokensPath string `json:"token_file_path"`
+	ServerEndpoint string `json:"endpoint_url"`
+	TokensPath     string `json:"token_file_path"`
 }
 
 func GetConfigJSON(jsonFile string) (cfg HiveConfig, err error) {
-    jsonDoc, err := ioutil.ReadFile(jsonFile)
-    if err != nil {
-        log.Fatal("Could not read config file: %s ",err)
-        return 
-    } 
-    err = json.Unmarshal(jsonDoc, &cfg)
-    return cfg, err
+	jsonDoc, err := ioutil.ReadFile(jsonFile)
+	if err != nil {
+		log.Fatalf("Could not read config file: %s ", err)
+		return
+	}
+	err = json.Unmarshal(jsonDoc, &cfg)
+	return cfg, err
 }
 
 type TabletClient struct {
 	ID       string
 	Token    string
-	Responce string
+	DeviceID int
+	RespObj  ServiceObject
+    Rawresp  string
+	ch       chan string
 }
 
-// GetRide create connect amd get ride fpr that token
-func (t *TabletClient) GetRide(deviceCode int, wg *sync.WaitGroup, cfg *HiveConfig) (bool, error) {
+// GetRide create connect amd get ride for that token
+func (t *TabletClient) GetRide(wg *sync.WaitGroup, cfg *HiveConfig, ch chan<- string) (bool, error) {
 	defer wg.Done()
 	client := &http.Client{}
-	url := strings.Join([]string{cfg.ServerEndpoint}, string(deviceCode))
+	url := strings.Join([]string{cfg.ServerEndpoint}, string(t.DeviceID))
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return false, err
 	}
 	request.Header.Add("HTTP-AUTH-TOKEN", t.Token)
+    fmt.Println(t.Token)
 	responce, err := client.Do(request)
-    if err != nil {
-        log.Fatal(err)
-    }
-	var buf [1024]byte
-   	reader := responce.Body
-	n, err := reader.Read(buf[0:])
-    defer responce.Body.Close()
 	if err != nil {
+		log.Fatal(err)
+	}
+	jsonData, err := ioutil.ReadAll(responce.Body)
+	defer responce.Body.Close()
+	if err != nil && err != io.EOF {
 		fmt.Println("error reading from responce Body", err)
-        return false,err
+		return false, err
 	}
-	resp := string(buf[0:n])
-	answer, err := json.Marshal(resp)
+    var answer ServiceObject
+    if responce.Status == "200" {
+       err = json.Unmarshal([]byte(jsonData), &answer)
+       t.RespObj = answer
+    } else {
+       t.Rawresp = string(jsonData)
+       ch <- fmt.Sprintf("DeviceID %d responce: %v  \n", t.DeviceID, t.Rawresp)
+    }
 	if err != nil {
-		fmt.Println("error while marshal json from responce", err)
-        return false,err
-	}
-	if string(answer) != "" {
-		t.Responce = string(answer)
-	} else {
-		t.Responce = ""
+		fmt.Fprintf(os.Stderr,"error: %v while marshal json from responce", err)
+		return false, err
 	}
 	if err != nil {
 		return false, err
-	}
-	if t.Responce != "" {
-		return true, nil
 	}
 	return false, nil
 }
@@ -122,10 +124,13 @@ var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 var memprofile = flag.String("memprofile", "", "write mem profile to file")
 
 func main() {
-    cfg,err := GetConfigJSON("./config.json")
-    if err != nil {
-        log.Fatal(err)
-    }
+	start := time.Now()
+	fmt.Fprintf(os.Stdout, "We start at: %v\n", start)
+	cfg, err := GetConfigJSON("./config.json")
+	if err != nil {
+		log.Fatal(err)
+	}
+	ch := make(chan string)
 	flag.Parse()
 	if *cpuprofile != "" {
 		f, err := os.Create(*cpuprofile)
@@ -144,28 +149,29 @@ func main() {
 	}
 	var wg sync.WaitGroup
 	tokens, err := getTokens(cfg.TokensPath)
-	hive := make(map[int]TabletClient)
+	hive := make([]TabletClient, 0, 1000)
 	if err != nil {
 		fmt.Println("error while read tokens.json", err)
 	}
-	for k, v := range tokens {
-		hive[k] = TabletClient{ID: v, Token: v}
+	for k, v := range tokens[0:]{
+		hive = append(hive, TabletClient{ID: v, Token: v, DeviceID: k+1})
 	}
-	for k, v := range hive {
+	fmt.Printf("we have %d tokens \n", len(hive))
+	for _, v := range hive {
 		wg.Add(1)
-		go v.GetRide(k, &wg, &cfg)
+		go v.GetRide(&wg, &cfg, ch)
+        if str, ok := <-ch; ok {
+		fmt.Printf("from chan: %s \n", str)
 	}
-	for k,v := range hive {
-        if v.Responce != "" {
-            fmt.Println(k, v.Responce)
-        }   
-    }
-    fmt.Println("we done here")
+	}
+	
+	secs := time.Since(start).Seconds()
+	fmt.Printf("we all done with: %.5fs \n", secs)
 }
 
 func getTokens(path string) (tokens []string, err error) {
-	content, err := ioutil.ReadFile(path)
-
+	tokens = make([]string, 0, 0)
+    content, err := ioutil.ReadFile(path)
 	if err != nil {
 		fmt.Println("error while open file with tokens", err)
 		return nil, err
