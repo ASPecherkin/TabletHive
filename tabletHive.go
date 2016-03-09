@@ -56,8 +56,18 @@ type Ride struct {
 }
 
 type HiveConfig struct {
-    ServerUrl string `json:"url"`
-    TokensPath string `json:"token_path"`
+    ServerEndpoint string `json:"endpoint_url"`
+    TokensPath string `json:"token_file_path"`
+}
+
+func GetConfigJSON(jsonFile string) (cfg HiveConfig, err error) {
+    jsonDoc, err := ioutil.ReadFile(jsonFile)
+    if err != nil {
+        log.Fatal("Could not read config file: %s ",err)
+        return 
+    } 
+    err = json.Unmarshal(jsonDoc, &cfg)
+    return cfg, err
 }
 
 type TabletClient struct {
@@ -67,10 +77,10 @@ type TabletClient struct {
 }
 
 // GetRide create connect amd get ride fpr that token
-func (t *TabletClient) GetRide(deviceCode int, wg *sync.WaitGroup) (bool, error) {
+func (t *TabletClient) GetRide(deviceCode int, wg *sync.WaitGroup, cfg *HiveConfig) (bool, error) {
 	defer wg.Done()
 	client := &http.Client{}
-	url := strings.Join([]string{"url"}, string(deviceCode))
+	url := strings.Join([]string{cfg.ServerEndpoint}, string(deviceCode))
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return false, err
@@ -112,6 +122,10 @@ var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
 var memprofile = flag.String("memprofile", "", "write mem profile to file")
 
 func main() {
+    cfg,err := GetConfigJSON("./config.json")
+    if err != nil {
+        log.Fatal(err)
+    }
 	flag.Parse()
 	if *cpuprofile != "" {
 		f, err := os.Create(*cpuprofile)
@@ -129,7 +143,7 @@ func main() {
 		pprof.WriteHeapProfile(f)
 	}
 	var wg sync.WaitGroup
-	tokens, err := getTokens("tokens.json")
+	tokens, err := getTokens(cfg.TokensPath)
 	hive := make(map[int]TabletClient)
 	if err != nil {
 		fmt.Println("error while read tokens.json", err)
@@ -139,7 +153,7 @@ func main() {
 	}
 	for k, v := range hive {
 		wg.Add(1)
-		go v.GetRide(k, &wg)
+		go v.GetRide(k, &wg, &cfg)
 	}
 	for k,v := range hive {
         if v.Responce != "" {
