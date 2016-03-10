@@ -15,23 +15,23 @@ import (
 	"time"
 )
 
-type ServiceObject struct {
-	ID      uint   `json:"id"`
-	Name    string `json:"name"`
-	ObjType string `json:"type"`
-	TimeT   string `json:"time_t"`
-	Phones  string `json:"phones"`
-	TimeG1  string `json:"time_g1"`
-	TimeG2  string `json:"time_g2"`
+//Ride - basic struct for Mobile controller responce 
+type Ride struct {
+	ID        uint      `json:"id"`
+	Number    string    `json:"name"`
+	Duration  uint      `json:"name"`
+	Distance  float32   `json:"name"`
+	FactRides FactRides `json:"name"`
 }
 
-type Order struct {
-	ID            uint          `json:"name"`
-	Status        string        `json:"name"`
-	ServiceType   string        `json:"name"`
-	ServiceObject ServiceObject `json:"name"`
+// FactRides - struct for json unmarshal FactRides in responce
+type FactRides struct {
+	ID         uint        `json:"name"`
+	TimeStart  string      `json:"name"`
+	RidePoints []RidePoint `json:"name"`
 }
 
+// RidePoint - struct for json unmarshal RidePoint in responce
 type RidePoint struct {
 	ID          uint    `json:"name"`
 	Number      uint    `json:"name"`
@@ -43,25 +43,32 @@ type RidePoint struct {
 	Order       Order   `json:"order"`
 }
 
-type FactRides struct {
-	ID         uint        `json:"name"`
-	TimeStart  string      `json:"name"`
-	RidePoints []RidePoint `json:"name"`
+// Order - struct for json unmarshal Order in responce
+type Order struct {
+	ID            uint          `json:"name"`
+	Status        string        `json:"name"`
+	ServiceType   string        `json:"name"`
+	ServiceObject ServiceObject `json:"name"`
 }
 
-type Ride struct {
-	ID        uint      `json:"id"`
-	Number    string    `json:"name"`
-	Duration  uint      `json:"name"`
-	Distance  float32   `json:"name"`
-	FactRides FactRides `json:"name"`
+// ServiceObject - struct for json unmarshal ServiceObject in responce
+type ServiceObject struct {
+	ID      uint   `json:"id"`
+	Name    string `json:"name"`
+	ObjType string `json:"type"`
+	TimeT   string `json:"time_t"`
+	Phones  string `json:"phones"`
+	TimeG1  string `json:"time_g1"`
+	TimeG2  string `json:"time_g2"`
 }
 
+// HiveConfig gather all of needed configs
 type HiveConfig struct {
 	ServerEndpoint string `json:"endpoint_url"`
 	TokensPath     string `json:"token_file_path"`
 }
 
+// GetConfigJSON func get full path to config.json and store it in HiveConfig struct
 func GetConfigJSON(jsonFile string) (cfg HiveConfig, err error) {
 	jsonDoc, err := ioutil.ReadFile(jsonFile)
 	if err != nil {
@@ -72,6 +79,7 @@ func GetConfigJSON(jsonFile string) (cfg HiveConfig, err error) {
 	return cfg, err
 }
 
+// TabletClient one unit of hive
 type TabletClient struct {
 	ID       string
 	Token    string
@@ -112,9 +120,6 @@ func (t *TabletClient) GetRide(wg *sync.WaitGroup, cfg *HiveConfig, ch chan<- st
     }
 	if err != nil {
 		fmt.Fprintf(os.Stderr,"error: %v while marshal json from responce", err)
-		return false, err
-	}
-	if err != nil {
 		return false, err
 	}
 	return false, nil
@@ -163,8 +168,7 @@ func main() {
         if str, ok := <-ch; ok {
 		fmt.Printf("from chan: %s \n", str)
 	}
-	}
-	
+	}	
 	secs := time.Since(start).Seconds()
 	fmt.Printf("we all done with: %.5fs \n", secs)
 }

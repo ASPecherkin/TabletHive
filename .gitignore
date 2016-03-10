@@ -1,0 +1,5 @@
+*.pprof
+*.pdf
+tabletHive
+tokens.json
+config.json
