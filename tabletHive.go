@@ -10,45 +10,46 @@ import (
 	"net/http"
 	"os"
 	"runtime/pprof"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
 
-//Ride - basic struct for Mobile controller responce 
+//Ride - basic struct for Mobile controller responce
 type Ride struct {
-	ID        uint      `json:"id"`
-	Number    string    `json:"name"`
-	Duration  uint      `json:"name"`
-	Distance  float32   `json:"name"`
-	FactRides FactRides `json:"name"`
+	ID        uint        `json:"id"`
+	Number    string      `json:"number"`
+	Duration  uint        `json:"duration"`
+	Distance  float32     `json:"distance"`
+	FactRides []FactRides `json:"fact_rides"`
 }
 
 // FactRides - struct for json unmarshal FactRides in responce
 type FactRides struct {
-	ID         uint        `json:"name"`
-	TimeStart  string      `json:"name"`
-	RidePoints []RidePoint `json:"name"`
+	ID         uint        `json:"id"`
+	TimeStart  string      `json:"time_start"`
+	RidePoints []RidePoint `json:"ride_points"`
 }
 
 // RidePoint - struct for json unmarshal RidePoint in responce
 type RidePoint struct {
-	ID          uint    `json:"name"`
-	Number      uint    `json:"name"`
-	Lat         float32 `json:"name"`
-	Lng         float32 `json:"name"`
-	AddressText string  `json:"name"`
-	Status      string  `json:"name"`
-	Kind        string  `json:"name"`
+	ID          uint    `json:"id"`
+	Number      uint    `json:"number"`
+	Lat         float32 `json:"lat"`
+	Lng         float32 `json:"lng"`
+	AddressText string  `json:"address_text"`
+	Status      string  `json:"status"`
+	Kind        string  `json:"kind"`
 	Order       Order   `json:"order"`
 }
 
 // Order - struct for json unmarshal Order in responce
 type Order struct {
-	ID            uint          `json:"name"`
-	Status        string        `json:"name"`
-	ServiceType   string        `json:"name"`
-	ServiceObject ServiceObject `json:"name"`
+	ID            uint          `json:"id"`
+	Status        string        `json:"status"`
+	ServiceType   string        `json:"service_type"`
+	ServiceObject ServiceObject `json:"service_object"`
 }
 
 // ServiceObject - struct for json unmarshal ServiceObject in responce
@@ -60,6 +61,11 @@ type ServiceObject struct {
 	Phones  string `json:"phones"`
 	TimeG1  string `json:"time_g1"`
 	TimeG2  string `json:"time_g2"`
+}
+
+// Authtokens stores json represent array of tokens
+type Authtokens struct {
+	Tokens []string `json:"tokens"`
 }
 
 // HiveConfig gather all of needed configs
@@ -81,25 +87,28 @@ func GetConfigJSON(jsonFile string) (cfg HiveConfig, err error) {
 
 // TabletClient one unit of hive
 type TabletClient struct {
-	ID       string
-	Token    string
-	DeviceID int
-	RespObj  ServiceObject
-    Rawresp  string
-	ch       chan string
+	ID         string
+	Token      string
+	DeviceID   string
+	RespObj    Ride
+	Rawresp    string
+	StatusCode int
+	ch         chan string
 }
 
 // GetRide create connect amd get ride for that token
-func (t *TabletClient) GetRide(wg *sync.WaitGroup, cfg *HiveConfig, ch chan<- string) (bool, error) {
+func (t *TabletClient) GetRide(wg *sync.WaitGroup, cfg *HiveConfig) (int, error) {
 	defer wg.Done()
+	endURL := []string{}
 	client := &http.Client{}
-	url := strings.Join([]string{cfg.ServerEndpoint}, string(t.DeviceID))
+	endURL = append(endURL, cfg.ServerEndpoint)
+	endURL = append(endURL, string(t.DeviceID))
+	url := strings.Join(endURL, "")
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return false, err
+		return 0, err
 	}
 	request.Header.Add("HTTP-AUTH-TOKEN", t.Token)
-    fmt.Println(t.Token)
 	responce, err := client.Do(request)
 	if err != nil {
 		log.Fatal(err)
@@ -108,21 +117,24 @@ func (t *TabletClient) GetRide(wg *sync.WaitGroup, cfg *HiveConfig, ch chan<- st
 	defer responce.Body.Close()
 	if err != nil && err != io.EOF {
 		fmt.Println("error reading from responce Body", err)
-		return false, err
+		return 0, err
 	}
-    var answer ServiceObject
-    if responce.Status == "200" {
-       err = json.Unmarshal([]byte(jsonData), &answer)
-       t.RespObj = answer
-    } else {
-       t.Rawresp = string(jsonData)
-       ch <- fmt.Sprintf("DeviceID %d responce: %v  \n", t.DeviceID, t.Rawresp)
-    }
-	if err != nil {
-		fmt.Fprintf(os.Stderr,"error: %v while marshal json from responce", err)
-		return false, err
+	t.StatusCode = responce.StatusCode
+	if responce.StatusCode == 404 {
+		t.Rawresp = string(jsonData)
+		return responce.StatusCode, nil
+	} else if responce.StatusCode == 200 {
+		var answer Ride
+		err = json.Unmarshal([]byte(jsonData), &answer)
+		if err != nil {
+			fmt.Printf("err: %s  when unmarhal \n", err)
+		}
+		t.RespObj, t.Rawresp = answer, string(jsonData)
+		return responce.StatusCode, nil
+	} else {
+		t.Rawresp = string(jsonData)
+		return responce.StatusCode, nil
 	}
-	return false, nil
 }
 
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
@@ -135,7 +147,6 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	ch := make(chan string)
 	flag.Parse()
 	if *cpuprofile != "" {
 		f, err := os.Create(*cpuprofile)
@@ -158,29 +169,33 @@ func main() {
 	if err != nil {
 		fmt.Println("error while read tokens.json", err)
 	}
-	for k, v := range tokens[0:]{
-		hive = append(hive, TabletClient{ID: v, Token: v, DeviceID: k+1})
+	for k, v := range tokens.Tokens[0:2] {
+		hive = append(hive, TabletClient{ID: v, Token: v, DeviceID: strconv.Itoa(k + 1)})
 	}
 	fmt.Printf("we have %d tokens \n", len(hive))
-	for _, v := range hive {
+	for k := range hive {
 		wg.Add(1)
-		go v.GetRide(&wg, &cfg, ch)
-        if str, ok := <-ch; ok {
-		fmt.Printf("from chan: %s \n", str)
+		go hive[k].GetRide(&wg, &cfg)
 	}
-	}	
+	wg.Wait()
+	for _, v := range hive {
+		if v.StatusCode == 200 {
+			fmt.Printf("Success token %s with raw responce: \n %s \n , with responce : %v \n", v.Token, v.Rawresp, v.RespObj)
+		}
+
+	}
 	secs := time.Since(start).Seconds()
 	fmt.Printf("we all done with: %.5fs \n", secs)
 }
 
-func getTokens(path string) (tokens []string, err error) {
-	tokens = make([]string, 0, 0)
-    content, err := ioutil.ReadFile(path)
+func getTokens(path string) (tokens Authtokens, err error) {
+	tokens = Authtokens{}
+	content, err := ioutil.ReadFile(path)
 	if err != nil {
 		fmt.Println("error while open file with tokens", err)
-		return nil, err
+		return tokens, err
 	}
-	tokens = strings.Split(string(content), ",")
+	err = json.Unmarshal(content, &tokens)
 	return tokens, nil
 }
 
