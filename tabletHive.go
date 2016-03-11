@@ -127,7 +127,7 @@ func (t *TabletClient) GetRide(wg *sync.WaitGroup, cfg *HiveConfig) (int, error)
 		var answer Ride
 		err = json.Unmarshal([]byte(jsonData), &answer)
 		if err != nil {
-			fmt.Printf("err: %s  when unmarhal \n", err)
+			fmt.Printf("err: %s  with token : %s when unmarhal this %s  \n", err, t.Token, jsonData)
 		}
 		t.RespObj, t.Rawresp = answer, string(jsonData)
 		return responce.StatusCode, nil
@@ -135,6 +135,11 @@ func (t *TabletClient) GetRide(wg *sync.WaitGroup, cfg *HiveConfig) (int, error)
 		t.Rawresp = string(jsonData)
 		return responce.StatusCode, nil
 	}
+}
+
+func (t *TabletClient) ConsumeRidePoints(wg *sync.WaitGroup, cfg *HiveConfig) (bool, error) {
+	fmt.Println(os.Stdout, "We have key: %d in Consume,\n Value: %v \n", t.Token, t.RespObj)
+	return false, nil
 }
 
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
@@ -169,7 +174,7 @@ func main() {
 	if err != nil {
 		fmt.Println("error while read tokens.json", err)
 	}
-	for k, v := range tokens.Tokens[0:2] {
+	for k, v := range tokens.Tokens[0:] {
 		hive = append(hive, TabletClient{ID: v, Token: v, DeviceID: strconv.Itoa(k + 1)})
 	}
 	fmt.Printf("we have %d tokens \n", len(hive))
@@ -178,12 +183,13 @@ func main() {
 		go hive[k].GetRide(&wg, &cfg)
 	}
 	wg.Wait()
-	for _, v := range hive {
+	for k, v := range hive {
 		if v.StatusCode == 200 {
-			fmt.Printf("Success token %s with raw responce: \n %s \n , with responce : %v \n", v.Token, v.Rawresp, v.RespObj)
+			wg.Add(1)
+			go hive[k].ConsumeRidePoints(&wg, &cfg)
 		}
-
 	}
+	wg.Wait()
 	secs := time.Since(start).Seconds()
 	fmt.Printf("we all done with: %.5fs \n", secs)
 }
