@@ -138,7 +138,6 @@ func (t *TabletClient) GetRide(wg *sync.WaitGroup, cfg *HiveConfig) (int, error)
 }
 
 func (t *TabletClient) ConsumeRidePoints(wg *sync.WaitGroup, cfg *HiveConfig) (bool, error) {
-	fmt.Println(os.Stdout, "We have key: %d in Consume,\n Value: %v \n", t.Token, t.RespObj)
 	return false, nil
 }
 
@@ -183,12 +182,14 @@ func main() {
 		go hive[k].GetRide(&wg, &cfg)
 	}
 	wg.Wait()
-	for k, v := range hive {
-		if v.StatusCode == 200 {
-			wg.Add(1)
-			go hive[k].ConsumeRidePoints(&wg, &cfg)
+	ridePoints := make(map[string][]RidePoint)
+	for _, tablerClient := range hive {
+		for _, factRides := range tablerClient.RespObj.FactRides {
+			if len(factRides.RidePoints) != 0 {
+				ridePoints[tablerClient.DeviceID] = factRides.RidePoints
+			}
 		}
-	}
+	} 
 	wg.Wait()
 	secs := time.Since(start).Seconds()
 	fmt.Printf("we all done with: %.5fs \n", secs)
