@@ -1,4 +1,8 @@
 {
-    "endpoint_url": "https://yours_endpoint_address",
-    "token_file_path": "path to auth tokes"
+    "server": "https://yours_server_address",
+    "token_file_path": "path to auth tokes",
+    "endpoints": {
+        "get_rides": "context for rides",
+        "update_status": "endpoints for update statuses"
+    }
 }

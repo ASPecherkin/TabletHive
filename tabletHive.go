@@ -41,15 +41,15 @@ type RidePoint struct {
 	AddressText string  `json:"address_text"`
 	Status      string  `json:"status"`
 	Kind        string  `json:"kind"`
-	Order       Order   `json:"order"`
+	Order       `json:"order"`
 }
 
 // Order - struct for json unmarshal Order in responce
 type Order struct {
-	ID            uint          `json:"id"`
-	Status        string        `json:"status"`
-	ServiceType   string        `json:"service_type"`
-	ServiceObject ServiceObject `json:"service_object"`
+	ID            uint   `json:"id"`
+	Status        string `json:"status"`
+	ServiceType   string `json:"service_type"`
+	ServiceObject `json:"service_object"`
 }
 
 // ServiceObject - struct for json unmarshal ServiceObject in responce
@@ -70,8 +70,15 @@ type Authtokens struct {
 
 // HiveConfig gather all of needed configs
 type HiveConfig struct {
-	ServerEndpoint string `json:"endpoint_url"`
-	TokensPath     string `json:"token_file_path"`
+	ServerURL  string `json:"server_url"`
+	TokensPath string `json:"token_file_path"`
+	Endpoints  `json:"endpoints"`
+}
+
+// Endpoints stores all urls for requests
+type Endpoints struct {
+	GetRides     string `json:"get_rides"`
+	UpdateStatus string `json:"update_status"`
 }
 
 // GetConfigJSON func get full path to config.json and store it in HiveConfig struct
@@ -101,7 +108,8 @@ func (t *TabletClient) GetRide(wg *sync.WaitGroup, cfg *HiveConfig) (int, error)
 	defer wg.Done()
 	endURL := []string{}
 	client := &http.Client{}
-	endURL = append(endURL, cfg.ServerEndpoint)
+	endURL = append(endURL, cfg.ServerURL)
+	endURL = append(endURL, cfg.Endpoints.GetRides)
 	endURL = append(endURL, string(t.DeviceID))
 	url := strings.Join(endURL, "")
 	request, err := http.NewRequest("GET", url, nil)
@@ -137,7 +145,29 @@ func (t *TabletClient) GetRide(wg *sync.WaitGroup, cfg *HiveConfig) (int, error)
 	}
 }
 
-func (t *TabletClient) ConsumeRidePoints(wg *sync.WaitGroup, cfg *HiveConfig) (bool, error) {
+// ConsumeRidePoints func create serias of request emulates real status updating
+func ConsumeRidePoints(points []RidePoint, wg *sync.WaitGroup, cfg *HiveConfig) (bool, error) {
+	defer wg.Done()
+	client := &http.Client{}
+	endURL := []string{}
+	endURL = append(endURL, cfg.ServerURL)
+	endURL = append(endURL, cfg.Endpoints.UpdateStatus)
+	url := strings.Join(endURL, "")
+	for _, v := range points {
+		request, err := http.NewRequest("PUT", url+string(v.ID), nil)
+		if err != nil {
+			return false, err
+		}
+		responce, err := client.Do(request)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if responce.StatusCode == 200 {
+			return true, nil
+		}
+		return false, nil
+
+	}
 	return false, nil
 }
 
@@ -186,10 +216,14 @@ func main() {
 	for _, tablerClient := range hive {
 		for _, factRides := range tablerClient.RespObj.FactRides {
 			if len(factRides.RidePoints) != 0 {
-				ridePoints[tablerClient.DeviceID] = factRides.RidePoints
+				ridePoints[tablerClient.Token] = factRides.RidePoints
 			}
 		}
-	} 
+	}
+	for k := range ridePoints {
+		wg.Add(1)
+		ConsumeRidePoints(ridePoints[k], &wg, &cfg)
+	}
 	wg.Wait()
 	secs := time.Since(start).Seconds()
 	fmt.Printf("we all done with: %.5fs \n", secs)
