@@ -1,8 +1,8 @@
 {
-    "server": "https://yours_server_address",
-    "token_file_path": "path to auth tokes",
+    "server": "server ip or addres",
+    "token_file_path": "./tokens.json",
     "endpoints": {
-        "get_rides": "context for rides",
-        "update_status": "endpoints for update statuses"
+        "get_rides": "/mobile/routes.json?device_code=",
+        "update_status": "/mobile/ride_points/"
     }
 }

@@ -70,7 +70,7 @@ type Authtokens struct {
 
 // HiveConfig gather all of needed configs
 type HiveConfig struct {
-	ServerURL  string `json:"server_url"`
+	ServerURL  string `json:"server"`
 	TokensPath string `json:"token_file_path"`
 	Endpoints  `json:"endpoints"`
 }
@@ -146,7 +146,7 @@ func (t *TabletClient) GetRide(wg *sync.WaitGroup, cfg *HiveConfig) (int, error)
 }
 
 // ConsumeRidePoints func create serias of request emulates real status updating
-func ConsumeRidePoints(points []RidePoint, wg *sync.WaitGroup, cfg *HiveConfig) (bool, error) {
+func ConsumeRidePoints(authToken string, points []RidePoint, wg *sync.WaitGroup, cfg *HiveConfig) (bool, error) {
 	defer wg.Done()
 	client := &http.Client{}
 	endURL := []string{}
@@ -154,19 +154,29 @@ func ConsumeRidePoints(points []RidePoint, wg *sync.WaitGroup, cfg *HiveConfig) 
 	endURL = append(endURL, cfg.Endpoints.UpdateStatus)
 	url := strings.Join(endURL, "")
 	for _, v := range points {
-		request, err := http.NewRequest("PUT", url+string(v.ID), nil)
+		request, err := http.NewRequest("PUT", url+strconv.Itoa(int(v.ID)), nil)
+		request.Header.Add("HTTP-AUTH-TOKEN", authToken)
+		request.Header.Add("Content-Type:", "application/json")
+		fmt.Println(url + strconv.Itoa(int(v.ID)))
 		if err != nil {
+			log.Fatal(err)
 			return false, err
 		}
+		/*
+		   !TODO generate body of request looks like this example:
+		   example of request '{"ride_point":{"status":"departure","timestamp":"2016-03-11T17:55:01.554+0600","latitude":55.80565,"longitude":37.567}}'
+		*/
 		responce, err := client.Do(request)
 		if err != nil {
 			log.Fatal(err)
 		}
+		jsonData, err := ioutil.ReadAll(responce.Body)
+		responce.Body.Close()
+		fmt.Printf("we have token %s status and responce : %d \n %s \n", authToken, responce.StatusCode, string(jsonData))
 		if responce.StatusCode == 200 {
 			return true, nil
 		}
 		return false, nil
-
 	}
 	return false, nil
 }
@@ -222,7 +232,7 @@ func main() {
 	}
 	for k := range ridePoints {
 		wg.Add(1)
-		ConsumeRidePoints(ridePoints[k], &wg, &cfg)
+		ConsumeRidePoints(k, ridePoints[k], &wg, &cfg)
 	}
 	wg.Wait()
 	secs := time.Since(start).Seconds()
