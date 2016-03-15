@@ -87,7 +87,7 @@ func (t *TabletClient) GetRide(wg *sync.WaitGroup, cfg *HiveConfig) (int, error)
 		var answer tablet.Ride
 		err = json.Unmarshal([]byte(jsonData), &answer)
 		if err != nil {
-			fmt.Printf("err: %s  with token : %s when unmarhal this %s  \n", err, t.Token, jsonData)
+			fmt.Printf("err: %s  with token : %s when unmarhal this   \n", err, t.Token)
 		}
 		t.RespObj, t.Rawresp = answer, string(jsonData)
 		return responce.StatusCode, nil
@@ -114,6 +114,7 @@ func ConsumeRidePoints(authToken string, points []tablet.RidePoint, wg *sync.Wai
 		resp, err := client.Do(req)
 		if err != nil {
 			log.Panicln(err)
+            os.Exit(1)
 			return false, err
 		}
 		resp.Body.Close()
@@ -188,16 +189,4 @@ func getTokens(path string) (tokens Authtokens, err error) {
 	}
 	err = json.Unmarshal(content, &tokens)
 	return tokens, nil
-}
-
-func getChatset(responce *http.Response) string {
-	contentType := responce.Header.Get("Content-Type")
-	if contentType == "" {
-		return "UTF-8"
-	}
-	idx := strings.Index(contentType, "charset:")
-	if idx == -1 {
-		return "UTF-8"
-	}
-	return strings.Trim(contentType[idx:], " ")
 }
