@@ -15,54 +15,9 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/ASPecherkin/TabletHive/tablet"
 )
-
-//Ride - basic struct for Mobile controller responce
-type Ride struct {
-	ID        uint        `json:"id"`
-	Number    string      `json:"number"`
-	Duration  uint        `json:"duration"`
-	Distance  float32     `json:"distance"`
-	FactRides []FactRides `json:"fact_rides"`
-}
-
-// FactRides - struct for json unmarshal FactRides in responce
-type FactRides struct {
-	ID         uint        `json:"id"`
-	TimeStart  string      `json:"time_start"`
-	RidePoints []RidePoint `json:"ride_points"`
-}
-
-// RidePoint - struct for json unmarshal RidePoint in responce
-type RidePoint struct {
-	ID          uint    `json:"id"`
-	Number      uint    `json:"number"`
-	Lat         float32 `json:"lat"`
-	Lng         float32 `json:"lng"`
-	AddressText string  `json:"address_text"`
-	Status      string  `json:"status"`
-	Kind        string  `json:"kind"`
-	Order       `json:"order"`
-}
-
-// Order - struct for json unmarshal Order in responce
-type Order struct {
-	ID            uint   `json:"id"`
-	Status        string `json:"status"`
-	ServiceType   string `json:"service_type"`
-	ServiceObject `json:"service_object"`
-}
-
-// ServiceObject - struct for json unmarshal ServiceObject in responce
-type ServiceObject struct {
-	ID      uint   `json:"id"`
-	Name    string `json:"name"`
-	ObjType string `json:"type"`
-	TimeT   string `json:"time_t"`
-	Phones  string `json:"phones"`
-	TimeG1  string `json:"time_g1"`
-	TimeG2  string `json:"time_g2"`
-}
 
 // Authtokens stores json represent array of tokens
 type Authtokens struct {
@@ -98,7 +53,7 @@ type TabletClient struct {
 	ID         string
 	Token      string
 	DeviceID   string
-	RespObj    Ride
+	RespObj    tablet.Ride
 	Rawresp    string
 	StatusCode int
 	ch         chan string
@@ -129,7 +84,7 @@ func (t *TabletClient) GetRide(wg *sync.WaitGroup, cfg *HiveConfig) (int, error)
 		t.Rawresp = string(jsonData)
 		return responce.StatusCode, nil
 	} else if responce.StatusCode == 200 {
-		var answer Ride
+		var answer tablet.Ride
 		err = json.Unmarshal([]byte(jsonData), &answer)
 		if err != nil {
 			fmt.Printf("err: %s  with token : %s when unmarhal this %s  \n", err, t.Token, jsonData)
@@ -146,7 +101,7 @@ func (t *TabletClient) GetRide(wg *sync.WaitGroup, cfg *HiveConfig) (int, error)
 // TODO write func for netgerate list of auth tokens
 
 // ConsumeRidePoints func create serias of request emulates real status updating
-func ConsumeRidePoints(authToken string, points []RidePoint, wg *sync.WaitGroup, cfg *HiveConfig) (bool, error) {
+func ConsumeRidePoints(authToken string, points []tablet.RidePoint, wg *sync.WaitGroup, cfg *HiveConfig) (bool, error) {
 	defer wg.Done()
 	client := &http.Client{}
 	requestURL := cfg.ServerURL + cfg.Endpoints.UpdateStatus
@@ -207,7 +162,7 @@ func main() {
 		go hive[k].GetRide(&wg, &cfg)
 	}
 	wg.Wait()
-	ridePoints := make(map[string][]RidePoint)
+	ridePoints := make(map[string][]tablet.RidePoint)
 	for _, tablerClient := range hive {
 		for _, factRides := range tablerClient.RespObj.FactRides {
 			if len(factRides.RidePoints) != 0 {
