@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -106,12 +107,8 @@ type TabletClient struct {
 // GetRide create connect amd get ride for that token
 func (t *TabletClient) GetRide(wg *sync.WaitGroup, cfg *HiveConfig) (int, error) {
 	defer wg.Done()
-	endURL := []string{}
 	client := &http.Client{}
-	endURL = append(endURL, cfg.ServerURL)
-	endURL = append(endURL, cfg.Endpoints.GetRides)
-	endURL = append(endURL, string(t.DeviceID))
-	url := strings.Join(endURL, "")
+	url := strings.Join(append([]string{cfg.ServerURL, cfg.Endpoints.GetRides, t.DeviceID}), "")
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return 0, err
@@ -145,40 +142,28 @@ func (t *TabletClient) GetRide(wg *sync.WaitGroup, cfg *HiveConfig) (int, error)
 	}
 }
 
+// Func generateAuthTokens
+// TODO write func for netgerate list of auth tokens
+
 // ConsumeRidePoints func create serias of request emulates real status updating
 func ConsumeRidePoints(authToken string, points []RidePoint, wg *sync.WaitGroup, cfg *HiveConfig) (bool, error) {
 	defer wg.Done()
 	client := &http.Client{}
-	endURL := []string{}
-	endURL = append(endURL, cfg.ServerURL)
-	endURL = append(endURL, cfg.Endpoints.UpdateStatus)
-	url := strings.Join(endURL, "")
+	requestURL := cfg.ServerURL + cfg.Endpoints.UpdateStatus
 	for _, v := range points {
-		request, err := http.NewRequest("PUT", url+strconv.Itoa(int(v.ID)), nil)
-		request.Header.Add("HTTP-AUTH-TOKEN", authToken)
-		request.Header.Add("Content-Type:", "application/json")
-		fmt.Println(url + strconv.Itoa(int(v.ID)))
+		var jsonStr = []byte(`{"ride_point":{"status":"departure"}}`)
+		t := strings.Join(append([]string{requestURL}, strconv.Itoa(int(v.ID))), "")
+		req, err := http.NewRequest("PUT", t, bytes.NewBuffer(jsonStr))
+		req.Header.Set("HTTP-AUTH-TOKEN", "wMTTN0bOUvNVkiVpYQd8AA")
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := client.Do(req)
 		if err != nil {
-			log.Fatal(err)
+			log.Panicln(err)
 			return false, err
 		}
-		/*
-		   !TODO generate body of request looks like this example:
-		   example of request '{"ride_point":{"status":"departure","timestamp":"2016-03-11T17:55:01.554+0600","latitude":55.80565,"longitude":37.567}}'
-		*/
-		responce, err := client.Do(request)
-		if err != nil {
-			log.Fatal(err)
-		}
-		jsonData, err := ioutil.ReadAll(responce.Body)
-		responce.Body.Close()
-		fmt.Printf("we have token %s status and responce : %d \n %s \n", authToken, responce.StatusCode, string(jsonData))
-		if responce.StatusCode == 200 {
-			return true, nil
-		}
-		return false, nil
+		resp.Body.Close()
 	}
-	return false, nil
+	return true, nil
 }
 
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
@@ -232,7 +217,7 @@ func main() {
 	}
 	for k := range ridePoints {
 		wg.Add(1)
-		ConsumeRidePoints(k, ridePoints[k], &wg, &cfg)
+		go ConsumeRidePoints(k, ridePoints[k], &wg, &cfg)
 	}
 	wg.Wait()
 	secs := time.Since(start).Seconds()
