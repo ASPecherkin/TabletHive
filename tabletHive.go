@@ -59,8 +59,23 @@ type TabletClient struct {
 	ch         chan string
 }
 
+// Result store meta info about every request
+type Result struct {
+	RequestType   string  `json:"type"`
+	AuthToken     string  `json:"token"`
+	RequestURL    string  `json:"url"`
+	RequestStatus int     `json:"status_code"`
+	ProcessedTime float64 `json:"processed_time"`
+}
+
+type HiveResults struct {
+    When string `json:"when"`
+    ElapsedTime string `json:"elapsed_time"`
+    Results []Result `json:"results"`
+}
+
 // GetRide create connect amd get ride for that token
-func (t *TabletClient) GetRide(wg *sync.WaitGroup, cfg *HiveConfig) (int, error) {
+func (t *TabletClient) GetRide(wg *sync.WaitGroup, cfg *HiveConfig, get chan Result) (int, error) {
 	defer wg.Done()
 	client := &http.Client{}
 	url := strings.Join(append([]string{cfg.ServerURL, cfg.Endpoints.GetRides, t.DeviceID}), "")
@@ -69,11 +84,13 @@ func (t *TabletClient) GetRide(wg *sync.WaitGroup, cfg *HiveConfig) (int, error)
 		return 0, err
 	}
 	request.Header.Add("HTTP-AUTH-TOKEN", t.Token)
+	start := time.Now()
 	responce, err := client.Do(request)
 	if err != nil {
 		log.Fatal(err)
 	}
 	jsonData, err := ioutil.ReadAll(responce.Body)
+	get <- Result{RequestType: "GET_RIDE", AuthToken: t.Token, RequestURL: url, RequestStatus: responce.StatusCode, ProcessedTime: time.Since(start).Seconds()}
 	defer responce.Body.Close()
 	if err != nil && err != io.EOF {
 		fmt.Println("error reading from responce Body", err)
@@ -97,11 +114,45 @@ func (t *TabletClient) GetRide(wg *sync.WaitGroup, cfg *HiveConfig) (int, error)
 	}
 }
 
+func WriteConsumeResults(consume chan Result, cfg *HiveConfig) {
+	// defer wg.Done()
+    consumeFile ,err := os.Create("./consume.json")
+    defer consumeFile.Close()
+    if err != nil {
+        fmt.Println(err)
+    }
+	for i := range consume {
+        jsondata,err := json.Marshal(i)
+        if err != nil {
+            fmt.Println(err)
+        }
+		consumeFile.Write(jsondata)
+	}
+}
+
+// WriteResults collecting results of all type of requests
+func WriteGetResults(get chan Result, cfg *HiveConfig) {
+	// defer wg.Done()
+    getFile, err := os.Create("./get.json")
+    defer getFile.Close()
+    if err != nil {
+        fmt.Println(err)
+    }
+	for i := range get {
+        jsondata, err := json.Marshal(i)
+        if err != nil {
+            fmt.Println(err)
+        }
+		fmt.Printf("We do request %s for get ride with %.6fs secs \n", i.AuthToken, i.ProcessedTime)
+        getFile.Write(jsondata)
+	}
+}
+
 // Func generateAuthTokens
 // TODO write func for netgerate list of auth tokens
 
 // ConsumeRidePoints func create serias of request emulates real status updating
-func ConsumeRidePoints(authToken string, points []tablet.RidePoint, wg *sync.WaitGroup, cfg *HiveConfig) (bool, error) {
+func ConsumeRidePoints(authToken string, points []tablet.RidePoint, wg *sync.WaitGroup, cfg *HiveConfig, res chan Result) (bool, error) {
 	defer wg.Done()
 	client := &http.Client{}
 	requestURL := cfg.ServerURL + cfg.Endpoints.UpdateStatus
@@ -111,13 +162,15 @@ func ConsumeRidePoints(authToken string, points []tablet.RidePoint, wg *sync.Wai
 		req, err := http.NewRequest("PUT", t, bytes.NewBuffer(jsonStr))
 		req.Header.Set("HTTP-AUTH-TOKEN", "wMTTN0bOUvNVkiVpYQd8AA")
 		req.Header.Set("Content-Type", "application/json")
+        start := time.Now()
 		resp, err := client.Do(req)
+        resp.Body.Close()
+        res <- Result{RequestType: "CONSUME", AuthToken: authToken, RequestURL: t, RequestStatus: resp.StatusCode, ProcessedTime: time.Since(start).Seconds()}
 		if err != nil {
 			log.Panicln(err)
-            os.Exit(1)
+			os.Exit(1)
 			return false, err
 		}
-		resp.Body.Close()
 	}
 	return true, nil
 }
@@ -158,9 +211,11 @@ func main() {
 		hive = append(hive, TabletClient{ID: v, Token: v, DeviceID: strconv.Itoa(k + 1)})
 	}
 	fmt.Printf("we have %d tokens \n", len(hive))
+	get := make(chan Result, 5)
 	for k := range hive {
 		wg.Add(1)
-		go hive[k].GetRide(&wg, &cfg)
+		go hive[k].GetRide(&wg, &cfg, get)
+		go WriteGetResults(get, &cfg)
 	}
 	wg.Wait()
 	ridePoints := make(map[string][]tablet.RidePoint)
@@ -171,9 +226,11 @@ func main() {
 			}
 		}
 	}
+	consume := make(chan Result, 5)
 	for k := range ridePoints {
 		wg.Add(1)
-		go ConsumeRidePoints(k, ridePoints[k], &wg, &cfg)
+		go ConsumeRidePoints(k, ridePoints[k], &wg, &cfg, consume)
+		go WriteConsumeResults(consume, &cfg)
 	}
 	wg.Wait()
 	secs := time.Since(start).Seconds()
