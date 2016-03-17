@@ -37,17 +37,6 @@ type Endpoints struct {
 	UpdateStatus string `json:"update_status"`
 }
 
-// GetConfigJSON func get full path to config.json and store it in HiveConfig struct
-func GetConfigJSON(jsonFile string) (cfg HiveConfig, err error) {
-	jsonDoc, err := ioutil.ReadFile(jsonFile)
-	if err != nil {
-		log.Fatalf("Could not read config file: %s ", err)
-		return
-	}
-	err = json.Unmarshal(jsonDoc, &cfg)
-	return cfg, err
-}
-
 // TabletClient one unit of hive
 type TabletClient struct {
 	ID         string
@@ -131,6 +120,29 @@ func ConsumeResults(input chan Result, cfg *HiveConfig, testResult *HiveResults)
 	}
 }
 
+// getTokens read file from path and stores they in tokens
+func getTokens(path string) (tokens Authtokens, err error) {
+	tokens = Authtokens{}
+	content, err := ioutil.ReadFile(path)
+	if err != nil {
+		fmt.Println("error while open file with tokens", err)
+		return tokens, err
+	}
+	err = json.Unmarshal(content, &tokens)
+	return tokens, nil
+}
+
+// GetConfigJSON func get full path to config.json and store it in HiveConfig struct
+func GetConfigJSON(jsonFile string) (cfg HiveConfig, err error) {
+	jsonDoc, err := ioutil.ReadFile(jsonFile)
+	if err != nil {
+		log.Fatalf("Could not read config file: %s ", err)
+		return
+	}
+	err = json.Unmarshal(jsonDoc, &cfg)
+	return cfg, err
+}
+
 // Func generateAuthTokens
 // TODO write func for netgerate list of auth tokens
 
@@ -186,7 +198,7 @@ func main() {
 	}
 	var wg sync.WaitGroup
 	tokens, err := getTokens(cfg.TokensPath)
-	hive := make([]TabletClient, 0, 1000)
+	hive := make([]TabletClient, 0, 3000)
 	if err != nil {
 		fmt.Println("error while read tokens.json", err)
 	}
@@ -228,15 +240,4 @@ func main() {
 		fmt.Println(err)
 	}
 	ResultFile.Write(jsondata)
-}
-
-func getTokens(path string) (tokens Authtokens, err error) {
-	tokens = Authtokens{}
-	content, err := ioutil.ReadFile(path)
-	if err != nil {
-		fmt.Println("error while open file with tokens", err)
-		return tokens, err
-	}
-	err = json.Unmarshal(content, &tokens)
-	return tokens, nil
 }
