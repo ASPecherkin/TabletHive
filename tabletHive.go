@@ -26,9 +26,10 @@ type Authtokens struct {
 
 // HiveConfig gather all of needed configs
 type HiveConfig struct {
-	ServerURL  string `json:"server"`
-	TokensPath string `json:"token_file_path"`
-	Endpoints  `json:"endpoints"`
+	ServerURL    string `json:"server"`
+	TokensPath   string `json:"token_file_path"`
+	SecondsDelay int64    `json:"delay"`
+	Endpoints    `json:"endpoints"`
 }
 
 // Endpoints stores all urls for requests
@@ -76,6 +77,7 @@ func (t *TabletClient) GetRide(wg *sync.WaitGroup, cfg *HiveConfig, res chan Res
 		return err
 	}
 	request.Header.Add("HTTP-AUTH-TOKEN", t.Token)
+    time.Sleep(time.Duration(cfg.SecondsDelay))
 	start := time.Now()
 	responce, err := client.Do(request)
 	if err != nil {
@@ -157,6 +159,7 @@ func ConsumeRidePoints(authToken string, points []tablet.RidePoint, wg *sync.Wai
 		req, err := http.NewRequest("PUT", t, bytes.NewBuffer(jsonStr))
 		req.Header.Set("HTTP-AUTH-TOKEN", "wMTTN0bOUvNVkiVpYQd8AA")
 		req.Header.Set("Content-Type", "application/json")
+		time.Sleep(time.Duration(cfg.SecondsDelay))
 		start := time.Now()
 		resp, err := client.Do(req)
 		resp.Body.Close()
