@@ -68,20 +68,23 @@ type Result struct {
 	ProcessedTime float64 `json:"processed_time"`
 }
 
+// HiveResults stores all results of running
 type HiveResults struct {
-    When string `json:"when"`
-    ElapsedTime string `json:"elapsed_time"`
-    Results []Result `json:"results"`
+	When          string   `json:"when"`
+	ElapsedTime   float64  `json:"elapsed_time"`
+	GetResults    []Result `json:"get_results"`
+	UpdateResults []Result `json:"update_results"`
+	OthersResults []Result `json:"others_result"`
 }
 
 // GetRide create connect amd get ride for that token
-func (t *TabletClient) GetRide(wg *sync.WaitGroup, cfg *HiveConfig, get chan Result) (int, error) {
+func (t *TabletClient) GetRide(wg *sync.WaitGroup, cfg *HiveConfig, res chan Result) error {
 	defer wg.Done()
 	client := &http.Client{}
 	url := strings.Join(append([]string{cfg.ServerURL, cfg.Endpoints.GetRides, t.DeviceID}), "")
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return 0, err
+		return err
 	}
 	request.Header.Add("HTTP-AUTH-TOKEN", t.Token)
 	start := time.Now()
@@ -90,16 +93,16 @@ func (t *TabletClient) GetRide(wg *sync.WaitGroup, cfg *HiveConfig, get chan Res
 		log.Fatal(err)
 	}
 	jsonData, err := ioutil.ReadAll(responce.Body)
-	get <- Result{RequestType: "GET_RIDE", AuthToken: t.Token, RequestURL: url, RequestStatus: responce.StatusCode, ProcessedTime: time.Since(start).Seconds()}
+	res <- Result{RequestType: "GET_RIDE", AuthToken: t.Token, RequestURL: url, RequestStatus: responce.StatusCode, ProcessedTime: time.Since(start).Seconds()}
 	defer responce.Body.Close()
 	if err != nil && err != io.EOF {
 		fmt.Println("error reading from responce Body", err)
-		return 0, err
+		return err
 	}
 	t.StatusCode = responce.StatusCode
 	if responce.StatusCode == 404 {
 		t.Rawresp = string(jsonData)
-		return responce.StatusCode, nil
+		return nil
 	} else if responce.StatusCode == 200 {
 		var answer tablet.Ride
 		err = json.Unmarshal([]byte(jsonData), &answer)
@@ -107,44 +110,24 @@ func (t *TabletClient) GetRide(wg *sync.WaitGroup, cfg *HiveConfig, get chan Res
 			fmt.Printf("err: %s  with token : %s when unmarhal this   \n", err, t.Token)
 		}
 		t.RespObj, t.Rawresp = answer, string(jsonData)
-		return responce.StatusCode, nil
+		return nil
 	} else {
 		t.Rawresp = string(jsonData)
-		return responce.StatusCode, nil
+		return nil
 	}
 }
 
-func WriteConsumeResults(consume chan Result, cfg *HiveConfig) {
-	// defer wg.Done()
-    consumeFile ,err := os.Create("./consume.json")
-    defer consumeFile.Close()
-    if err != nil {
-        fmt.Println(err)
-    }
-	for i := range consume {
-        jsondata,err := json.Marshal(i)
-        if err != nil {
-            fmt.Println(err)
-        }
-		consumeFile.Write(jsondata)
-	}
-}
-
-// WriteResults collecting results of all type of requests
-func WriteGetResults(get chan Result, cfg *HiveConfig) {
-	// defer wg.Done()
-    getFile, err := os.Create("./get.json")
-    defer getFile.Close()
-    if err != nil {
-        fmt.Println(err)
-    }
-	for i := range get {
-        jsondata, err := json.Marshal(i)
-        if err != nil {
-            fmt.Println(err)
-        }
-		fmt.Printf("We do request %s for get ride with %.6fs secs \n", i.AuthToken, i.ProcessedTime)
-        getFile.Write(jsondata)
+// ConsumeResults will store all of results in one HiveResults
+func ConsumeResults(input chan Result, cfg *HiveConfig, testResult *HiveResults) {
+	for i := range input {
+		switch i.RequestType {
+		case "CONSUME":
+			testResult.UpdateResults = append(testResult.UpdateResults, i)
+		case "GET_RIDE":
+			testResult.GetResults = append(testResult.GetResults, i)
+		default:
+			testResult.OthersResults = append(testResult.OthersResults, i)
+		}
 	}
 }
 
@@ -152,7 +135,7 @@ func WriteGetResults(get chan Result, cfg *HiveConfig) {
 // TODO write func for netgerate list of auth tokens
 
 // ConsumeRidePoints func create serias of request emulates real status updating
-func ConsumeRidePoints(authToken string, points []tablet.RidePoint, wg *sync.WaitGroup, cfg *HiveConfig, res chan Result) (bool, error) {
+func ConsumeRidePoints(authToken string, points []tablet.RidePoint, wg *sync.WaitGroup, cfg *HiveConfig, res chan Result) error {
 	defer wg.Done()
 	client := &http.Client{}
 	requestURL := cfg.ServerURL + cfg.Endpoints.UpdateStatus
@@ -162,17 +145,17 @@ func ConsumeRidePoints(authToken string, points []tablet.RidePoint, wg *sync.Wai
 		req, err := http.NewRequest("PUT", t, bytes.NewBuffer(jsonStr))
 		req.Header.Set("HTTP-AUTH-TOKEN", "wMTTN0bOUvNVkiVpYQd8AA")
 		req.Header.Set("Content-Type", "application/json")
-        start := time.Now()
+		start := time.Now()
 		resp, err := client.Do(req)
-        resp.Body.Close()
-        res <- Result{RequestType: "CONSUME", AuthToken: authToken, RequestURL: t, RequestStatus: resp.StatusCode, ProcessedTime: time.Since(start).Seconds()}
+		resp.Body.Close()
+		res <- Result{RequestType: "CONSUME", AuthToken: authToken, RequestURL: t, RequestStatus: resp.StatusCode, ProcessedTime: time.Since(start).Seconds()}
 		if err != nil {
 			log.Panicln(err)
 			os.Exit(1)
-			return false, err
+			return err
 		}
 	}
-	return true, nil
+	return nil
 }
 
 var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
@@ -211,11 +194,12 @@ func main() {
 		hive = append(hive, TabletClient{ID: v, Token: v, DeviceID: strconv.Itoa(k + 1)})
 	}
 	fmt.Printf("we have %d tokens \n", len(hive))
-	get := make(chan Result, 5)
+	res := make(chan Result, 5)
+	testCase := HiveResults{When: start.String()}
+	go ConsumeResults(res, &cfg, &testCase)
 	for k := range hive {
 		wg.Add(1)
-		go hive[k].GetRide(&wg, &cfg, get)
-		go WriteGetResults(get, &cfg)
+		go hive[k].GetRide(&wg, &cfg, res)
 	}
 	wg.Wait()
 	ridePoints := make(map[string][]tablet.RidePoint)
@@ -226,15 +210,24 @@ func main() {
 			}
 		}
 	}
-	consume := make(chan Result, 5)
 	for k := range ridePoints {
 		wg.Add(1)
-		go ConsumeRidePoints(k, ridePoints[k], &wg, &cfg, consume)
-		go WriteConsumeResults(consume, &cfg)
+		go ConsumeRidePoints(k, ridePoints[k], &wg, &cfg, res)
 	}
 	wg.Wait()
 	secs := time.Since(start).Seconds()
 	fmt.Printf("we all done with: %.5fs \n", secs)
+	testCase.ElapsedTime = secs
+	jsondata, err := json.Marshal(testCase)
+	if err != nil {
+		fmt.Println(err)
+	}
+	ResultFile, err := os.Create("./TestCase.json")
+	defer ResultFile.Close()
+	if err != nil {
+		fmt.Println(err)
+	}
+	ResultFile.Write(jsondata)
 }
 
 func getTokens(path string) (tokens Authtokens, err error) {
