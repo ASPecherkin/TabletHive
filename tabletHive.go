@@ -49,15 +49,6 @@ type TabletClient struct {
 	ch         chan string
 }
 
-// Result store meta info about every request
-type Result struct {
-	RequestType   string  `json:"type"`
-	AuthToken     string  `json:"token"`
-	RequestURL    string  `json:"url"`
-	RequestStatus int     `json:"status_code"`
-	ProcessedTime float64 `json:"processed_time"`
-}
-
 // HiveResults stores all results of running
 type HiveResults struct {
 	When          string   `json:"when"`
@@ -65,6 +56,16 @@ type HiveResults struct {
 	GetResults    []Result `json:"get_results"`
 	UpdateResults []Result `json:"update_results"`
 	OthersResults []Result `json:"others_result"`
+}
+
+// Result store meta info about every request
+type Result struct {
+	RequestType   string  `json:"type"`
+	AuthToken     string  `json:"token"`
+	RequestURL    string  `json:"url"`
+	Responce      string  `json:"responce"`
+	RequestStatus int     `json:"status_code"`
+	ProcessedTime float64 `json:"processed_time"`
 }
 
 // GetRide create connect amd get ride for that token
@@ -157,13 +158,17 @@ func ConsumeRidePoints(authToken string, points []tablet.RidePoint, wg *sync.Wai
 		var jsonStr = []byte(`{"ride_point":{"status":"departure"}}`)
 		t := strings.Join(append([]string{requestURL}, strconv.Itoa(int(v.ID))), "")
 		req, err := http.NewRequest("PUT", t, bytes.NewBuffer(jsonStr))
-		req.Header.Set("HTTP-AUTH-TOKEN", "wMTTN0bOUvNVkiVpYQd8AA")
+		req.Header.Set("HTTP-AUTH-TOKEN", authToken)
 		req.Header.Set("Content-Type", "application/json")
 		time.Sleep(time.Duration(cfg.Endpoints["update_status"].Delay))
 		start := time.Now()
 		resp, err := client.Do(req)
+        jsonData, err := ioutil.ReadAll(resp.Body)
 		resp.Body.Close()
-		res <- Result{RequestType: "CONSUME", AuthToken: authToken, RequestURL: t, RequestStatus: resp.StatusCode, ProcessedTime: time.Since(start).Seconds()}
+        if err != nil {
+            log.Fatalln(err)
+        }
+		res <- Result{RequestType: "CONSUME", AuthToken: authToken, RequestURL: t, RequestStatus: resp.StatusCode, Responce: string(jsonData), ProcessedTime: time.Since(start).Seconds()}
 		if err != nil {
 			log.Panicln(err)
 			os.Exit(1)
@@ -225,6 +230,7 @@ func main() {
 			}
 		}
 	}
+    fmt.Println("Start updating statuses")
 	for k := range ridePoints {
 		wg.Add(1)
 		go ConsumeRidePoints(k, ridePoints[k], &wg, &cfg, res)
