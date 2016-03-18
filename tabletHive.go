@@ -26,16 +26,16 @@ type Authtokens struct {
 
 // HiveConfig gather all of needed configs
 type HiveConfig struct {
-	ServerURL    string `json:"server"`
-	TokensPath   string `json:"token_file_path"`
-	SecondsDelay int64    `json:"delay"`
-	Endpoints    `json:"endpoints"`
+	ServerURL    string               `json:"server"`
+	TokensPath   string               `json:"token_file_path"`
+	SecondsDelay int64                `json:"delay"`
+	Endpoints    map[string]Endpoints `json:"endpoints"`
 }
 
 // Endpoints stores all urls for requests
 type Endpoints struct {
-	GetRides     string `json:"get_rides"`
-	UpdateStatus string `json:"update_status"`
+	URL   string `json:"url"`
+	Delay int    `json:"delay"`
 }
 
 // TabletClient one unit of hive
@@ -71,13 +71,13 @@ type HiveResults struct {
 func (t *TabletClient) GetRide(wg *sync.WaitGroup, cfg *HiveConfig, res chan Result) error {
 	defer wg.Done()
 	client := &http.Client{}
-	url := strings.Join(append([]string{cfg.ServerURL, cfg.Endpoints.GetRides, t.DeviceID}), "")
+	url := strings.Join(append([]string{cfg.ServerURL, cfg.Endpoints["get_rides"].URL, t.DeviceID}), "")
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return err
 	}
 	request.Header.Add("HTTP-AUTH-TOKEN", t.Token)
-    time.Sleep(time.Duration(cfg.SecondsDelay))
+	time.Sleep(time.Duration(cfg.Endpoints["get_rides"].Delay))
 	start := time.Now()
 	responce, err := client.Do(request)
 	if err != nil {
@@ -152,14 +152,14 @@ func GetConfigJSON(jsonFile string) (cfg HiveConfig, err error) {
 func ConsumeRidePoints(authToken string, points []tablet.RidePoint, wg *sync.WaitGroup, cfg *HiveConfig, res chan Result) error {
 	defer wg.Done()
 	client := &http.Client{}
-	requestURL := cfg.ServerURL + cfg.Endpoints.UpdateStatus
+	requestURL := cfg.ServerURL + cfg.Endpoints["update_status"].URL
 	for _, v := range points {
 		var jsonStr = []byte(`{"ride_point":{"status":"departure"}}`)
 		t := strings.Join(append([]string{requestURL}, strconv.Itoa(int(v.ID))), "")
 		req, err := http.NewRequest("PUT", t, bytes.NewBuffer(jsonStr))
 		req.Header.Set("HTTP-AUTH-TOKEN", "wMTTN0bOUvNVkiVpYQd8AA")
 		req.Header.Set("Content-Type", "application/json")
-		time.Sleep(time.Duration(cfg.SecondsDelay))
+		time.Sleep(time.Duration(cfg.Endpoints["update_status"].Delay))
 		start := time.Now()
 		resp, err := client.Do(req)
 		resp.Body.Close()

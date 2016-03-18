@@ -1,9 +1,14 @@
 {
     "server": "server ip or addres",
     "token_file_path": "./tokens.json",
-    "delay": 0,
     "endpoints": {
-        "get_rides": "/mobile/routes.json?device_code=",
-        "update_status": "/mobile/ride_points/"
+        "get_rides": {
+            "url": "/mobile/routes.json?device_code=",
+            "delay": 0
+        },
+        "update_status": {
+            "url": "/mobile/ride_points/",
+            "delay": 0
+        }
     }
 }
