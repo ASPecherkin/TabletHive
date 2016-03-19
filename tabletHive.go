@@ -146,8 +146,6 @@ func GetConfigJSON(jsonFile string) (cfg HiveConfig, err error) {
 	return cfg, err
 }
 
-// Func generateAuthTokens
-// TODO write func for netgerate list of auth tokens
 
 // ConsumeRidePoints func create serias of request emulates real status updating
 func ConsumeRidePoints(authToken string, points []tablet.RidePoint, wg *sync.WaitGroup, cfg *HiveConfig, res chan Result) error {
