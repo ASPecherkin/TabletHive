@@ -16,6 +16,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/davecgh/go-spew/spew"
+
 	"github.com/ASPecherkin/TabletHive/tablet"
 )
 
@@ -99,7 +101,7 @@ func (t *TabletClient) GetRide(wg *sync.WaitGroup, cfg *HiveConfig, res chan Res
 		var answer tablet.Ride
 		err = json.Unmarshal([]byte(jsonData), &answer)
 		if err != nil {
-			fmt.Printf("err: %s  with token : %s when unmarhal this   \n", err, t.Token)
+			spew.Printf("err: %s  with token : %s when unmarhal this   \n", err, t)
 		}
 		t.RespObj, t.Rawresp = answer, string(jsonData)
 		return nil
@@ -161,11 +163,11 @@ func ConsumeRidePoints(authToken string, points []tablet.RidePoint, wg *sync.Wai
 		time.Sleep(time.Duration(cfg.Endpoints["update_status"].Delay))
 		start := time.Now()
 		resp, err := client.Do(req)
-        jsonData, err := ioutil.ReadAll(resp.Body)
+		jsonData, err := ioutil.ReadAll(resp.Body)
 		resp.Body.Close()
-        if err != nil {
-            log.Fatalln(err)
-        }
+		if err != nil {
+			log.Fatalln(err)
+		}
 		res <- Result{RequestType: "CONSUME", AuthToken: authToken, RequestURL: t, RequestStatus: resp.StatusCode, Responce: string(jsonData), ProcessedTime: time.Since(start).Seconds()}
 		if err != nil {
 			log.Panicln(err)
@@ -228,7 +230,7 @@ func main() {
 			}
 		}
 	}
-    fmt.Println("Start updating statuses")
+	fmt.Println("Start updating statuses")
 	for k := range ridePoints {
 		wg.Add(1)
 		go ConsumeRidePoints(k, ridePoints[k], &wg, &cfg, res)
