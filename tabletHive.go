@@ -106,6 +106,7 @@ func getSadiraToken(cfg *HiveConfig) {
 		}
 		authHeader := "Basic " + b64.StdEncoding.EncodeToString([]byte("strela_operator:strela"))
 		req.Header.Add("Authorization", authHeader)
+		time.Sleep(time.Duration(cfg.Endpoints["sign_in"].Delay))
 		resp, err := client.Do(req)
 		if err != nil {
 			log.Fatalln(err)
