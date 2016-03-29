@@ -1,6 +1,7 @@
 {
     "server": "server ip or addres",
     "token_file_path": "./tokens.json",
+    "device_codes": "deviceIds.json",
     "endpoints": {
         "get_rides": {
             "url": "/mobile/routes.json?device_code=",

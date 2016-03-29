@@ -30,6 +30,7 @@ type Authtokens struct {
 type HiveConfig struct {
 	ServerURL    string               `json:"server"`
 	TokensPath   string               `json:"token_file_path"`
+	DeviceCodes  string               `json:"device_codes_file_path"`
 	SecondsDelay int64                `json:"delay"`
 	Endpoints    map[string]Endpoints `json:"endpoints"`
 }
@@ -68,6 +69,38 @@ type Result struct {
 	Responce      string  `json:"responce"`
 	RequestStatus int     `json:"status_code"`
 	ProcessedTime float64 `json:"processed_time"`
+}
+
+type deviceIds struct {
+	ids []int `json:"device_ids"`
+}
+
+type sadiraToken struct {
+	deviceID int    `json:"device_id"`
+	Code     string `json:"code"`
+	msgError string `json:"msgError"`
+	Login    string `json:login`
+	token    string `json:token`
+}
+
+func getSadiraToken(wg *sync.WaitGroup, cfg *HiveConfig) {
+	defer wg.Done()
+	data, err := ioutil.ReadFile(cfg.DeviceCodes)
+	if err != nil {
+		log.Fatalf("Could not read device ids file %s with error %s ", cf, err)
+	}
+	ids := make(deviceIds.ids, 0, 3)
+	err = json.Unmarshal(data, &ids)
+	tokensFile, err := os.Create("./sadiraTokens.json")
+	defer ResultFile.Close()
+	if err != nil {
+		log.Fatalln(err)
+	}
+	st := make([]sadiraToken, 0, 5)
+	client := &http.Client{}
+	for _, id := range ids {
+        url := strings.Join(append([]string{cfg.ServerURL, cfg.Endpoints["sign_in"].URL},"login=", "&device_code=",ids)
+	}
 }
 
 // GetRide create connect amd get ride for that token
@@ -147,7 +180,6 @@ func GetConfigJSON(jsonFile string) (cfg HiveConfig, err error) {
 	err = json.Unmarshal(jsonDoc, &cfg)
 	return cfg, err
 }
-
 
 // ConsumeRidePoints func create serias of request emulates real status updating
 func ConsumeRidePoints(authToken string, points []tablet.RidePoint, wg *sync.WaitGroup, cfg *HiveConfig, res chan Result) error {
