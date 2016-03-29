@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	b64 "encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -72,7 +73,7 @@ type Result struct {
 }
 
 type deviceIds struct {
-	ids []int `json:"device_ids"`
+	ids int `json:"device_ids"`
 }
 
 type sadiraToken struct {
@@ -83,23 +84,36 @@ type sadiraToken struct {
 	token    string `json:token`
 }
 
-func getSadiraToken(wg *sync.WaitGroup, cfg *HiveConfig) {
-	defer wg.Done()
+func getSadiraToken(cfg *HiveConfig) {
+	// defer wg.Done()
 	data, err := ioutil.ReadFile(cfg.DeviceCodes)
 	if err != nil {
-		log.Fatalf("Could not read device ids file %s with error %s ", cf, err)
+		log.Fatalf("Could not read device ids file %s with error %s ", cfg.DeviceCodes, err)
 	}
-	ids := make(deviceIds.ids, 0, 3)
+	ids := make([]deviceIds, 0, 3)
 	err = json.Unmarshal(data, &ids)
 	tokensFile, err := os.Create("./sadiraTokens.json")
-	defer ResultFile.Close()
+	defer tokensFile.Close()
 	if err != nil {
 		log.Fatalln(err)
 	}
-	st := make([]sadiraToken, 0, 5)
+	// st := make([]sadiraToken, 0, 5)
 	client := &http.Client{}
 	for _, id := range ids {
-        url := strings.Join(append([]string{cfg.ServerURL, cfg.Endpoints["sign_in"].URL},"login=", "&device_code=",ids)
+		url := strings.Join(append([]string{cfg.ServerURL, cfg.Endpoints["sign_in"].URL, "login=strela_operator", "&device_code=", string(id.ids)}), "")
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			log.Fatalln(err)
+		}
+		authHeader := "Basic " + b64.StdEncoding.EncodeToString([]byte("strela_operator:strela"))
+		req.Header.Add("Authorization", authHeader)
+		resp, err := client.Do(req)
+		if err != nil {
+			log.Fatalln(err)
+		}
+		jsonData, err := ioutil.ReadAll(resp.Body)
+		tokensFile.Write(jsonData)
+		defer resp.Body.Close()
 	}
 }
 
@@ -242,6 +256,7 @@ func main() {
 	if err != nil {
 		fmt.Println("error while read tokens.json", err)
 	}
+	getSadiraToken(&cfg)
 	for k, v := range tokens.Tokens[0:] {
 		hive = append(hive, TabletClient{ID: v, Token: v, DeviceID: strconv.Itoa(k + 1)})
 	}
