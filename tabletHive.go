@@ -73,34 +73,33 @@ type Result struct {
 }
 
 type deviceIds struct {
-	ids int `json:"device_ids"`
+	IDs []string `json:"device_ids"`
 }
 
 type sadiraToken struct {
-	deviceID int    `json:"device_id"`
+	deviceID string    `json:"device_id"`
 	Code     string `json:"code"`
-	msgError string `json:"msgError"`
-	Login    string `json:login`
-	token    string `json:token`
+	MsgError string `json:"msgError"`
+	Login    string `json:"login"`
+	Token    string `json:"token"`
 }
 
 func getSadiraToken(cfg *HiveConfig) {
-	// defer wg.Done()
-	data, err := ioutil.ReadFile(cfg.DeviceCodes)
+	content, err := ioutil.ReadFile(cfg.DeviceCodes)
 	if err != nil {
 		log.Fatalf("Could not read device ids file %s with error %s ", cfg.DeviceCodes, err)
 	}
-	ids := make([]deviceIds, 0, 3)
-	err = json.Unmarshal(data, &ids)
+	ids := deviceIds{}
+	err = json.Unmarshal(content, &ids)
 	tokensFile, err := os.Create("./sadiraTokens.json")
 	defer tokensFile.Close()
 	if err != nil {
 		log.Fatalln(err)
 	}
-	// st := make([]sadiraToken, 0, 5)
+	st := make([]sadiraToken, 0, 5)
 	client := &http.Client{}
-	for _, id := range ids {
-		url := strings.Join(append([]string{cfg.ServerURL, cfg.Endpoints["sign_in"].URL, "login=strela_operator", "&device_code=", string(id.ids)}), "")
+	for _, id := range ids.IDs {
+		url := strings.Join(append([]string{cfg.ServerURL, cfg.Endpoints["sign_in"].URL, "login=strela_operator", "&device_code=", id}), "")
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
 			log.Fatalln(err)
@@ -112,9 +111,15 @@ func getSadiraToken(cfg *HiveConfig) {
 			log.Fatalln(err)
 		}
 		jsonData, err := ioutil.ReadAll(resp.Body)
-		tokensFile.Write(jsonData)
+		token := sadiraToken{deviceID: id}
+		err = json.Unmarshal([]byte(jsonData), &token)
+		if token.Code == "ok" {
+			st = append(st, token)
+		}
 		defer resp.Body.Close()
 	}
+	jsonTokens, err := json.Marshal(st)
+	tokensFile.Write(jsonTokens)
 }
 
 // GetRide create connect amd get ride for that token
