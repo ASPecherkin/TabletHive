@@ -55,6 +55,7 @@ type TabletClient struct {
 
 // HiveResults stores all results of running
 type HiveResults struct {
+	sync.RWMutex
 	When          string   `json:"when"`
 	ElapsedTime   float64  `json:"elapsed_time"`
 	GetResults    []Result `json:"get_results"`
@@ -77,7 +78,7 @@ type deviceIds struct {
 }
 
 type sadiraToken struct {
-	deviceID string    `json:"device_id"`
+	deviceID string `json:"device_id"`
 	Code     string `json:"code"`
 	MsgError string `json:"msgError"`
 	Login    string `json:"login"`
@@ -167,13 +168,17 @@ func (t *TabletClient) GetRide(wg *sync.WaitGroup, cfg *HiveConfig, res chan Res
 // ConsumeResults will store all of results in one HiveResults
 func ConsumeResults(input chan Result, cfg *HiveConfig, testResult *HiveResults) {
 	for i := range input {
+		testResult.Lock()
 		switch i.RequestType {
 		case "CONSUME":
 			testResult.UpdateResults = append(testResult.UpdateResults, i)
+			testResult.Unlock()
 		case "GET_RIDE":
 			testResult.GetResults = append(testResult.GetResults, i)
+			testResult.Unlock()
 		default:
 			testResult.OthersResults = append(testResult.OthersResults, i)
+			testResult.Unlock()
 		}
 	}
 }
@@ -292,7 +297,9 @@ func main() {
 	secs := time.Since(start).Seconds()
 	fmt.Printf("we all done with: %.5fs \n", secs)
 	testCase.ElapsedTime = secs
+	testCase.Lock()
 	jsondata, err := json.Marshal(testCase)
+	testCase.Unlock()
 	if err != nil {
 		fmt.Println(err)
 	}
