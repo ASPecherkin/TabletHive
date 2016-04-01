@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -17,60 +16,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/davecgh/go-spew/spew"
-
 	"github.com/ASPecherkin/TabletHive/tablet"
 )
 
 // Authtokens stores json represent array of tokens
 type Authtokens struct {
 	Tokens []string `json:"tokens"`
-}
-
-// HiveConfig gather all of needed configs
-type HiveConfig struct {
-	ServerURL    string               `json:"server"`
-	TokensPath   string               `json:"token_file_path"`
-	DeviceCodes  string               `json:"device_codes_file_path"`
-	SecondsDelay int64                `json:"delay"`
-	Endpoints    map[string]Endpoints `json:"endpoints"`
-}
-
-// Endpoints stores all urls for requests
-type Endpoints struct {
-	URL   string `json:"url"`
-	Delay int    `json:"delay"`
-}
-
-// TabletClient one unit of hive
-type TabletClient struct {
-	ID         string
-	Token      string
-	DeviceID   string
-	RespObj    tablet.Ride
-	Rawresp    string
-	StatusCode int
-	ch         chan string
-}
-
-// HiveResults stores all results of running
-type HiveResults struct {
-	sync.RWMutex
-	When          string   `json:"when"`
-	ElapsedTime   float64  `json:"elapsed_time"`
-	GetResults    []Result `json:"get_results"`
-	UpdateResults []Result `json:"update_results"`
-	OthersResults []Result `json:"others_result"`
-}
-
-// Result store meta info about every request
-type Result struct {
-	RequestType   string  `json:"type"`
-	AuthToken     string  `json:"token"`
-	RequestURL    string  `json:"url"`
-	Responce      string  `json:"responce"`
-	RequestStatus int     `json:"status_code"`
-	ProcessedTime float64 `json:"processed_time"`
 }
 
 type deviceIds struct {
@@ -122,47 +73,6 @@ func getSadiraToken(cfg *HiveConfig) {
 	}
 	jsonTokens, err := json.Marshal(st)
 	tokensFile.Write(jsonTokens)
-}
-
-// GetRide create connect amd get ride for that token
-func (t *TabletClient) GetRide(wg *sync.WaitGroup, cfg *HiveConfig, res chan Result) error {
-	defer wg.Done()
-	client := &http.Client{}
-	url := strings.Join(append([]string{cfg.ServerURL, cfg.Endpoints["get_rides"].URL, t.DeviceID}), "")
-	request, err := http.NewRequest("GET", url, nil)
-	if err != nil {
-		return err
-	}
-	request.Header.Add("HTTP-AUTH-TOKEN", t.Token)
-	time.Sleep(time.Duration(cfg.Endpoints["get_rides"].Delay))
-	start := time.Now()
-	responce, err := client.Do(request)
-	if err != nil {
-		log.Fatal(err)
-	}
-	jsonData, err := ioutil.ReadAll(responce.Body)
-	res <- Result{RequestType: "GET_RIDE", AuthToken: t.Token, RequestURL: url, RequestStatus: responce.StatusCode, ProcessedTime: time.Since(start).Seconds()}
-	defer responce.Body.Close()
-	if err != nil && err != io.EOF {
-		fmt.Println("error reading from responce Body", err)
-		return err
-	}
-	t.StatusCode = responce.StatusCode
-	if responce.StatusCode == 404 {
-		t.Rawresp = string(jsonData)
-		return nil
-	} else if responce.StatusCode == 200 {
-		var answer tablet.Ride
-		err = json.Unmarshal([]byte(jsonData), &answer)
-		if err != nil {
-			spew.Printf("err: %s  with token : %s when unmarhal this   \n", err, t)
-		}
-		t.RespObj, t.Rawresp = answer, string(jsonData)
-		return nil
-	} else {
-		t.Rawresp = string(jsonData)
-		return nil
-	}
 }
 
 // ConsumeResults will store all of results in one HiveResults
