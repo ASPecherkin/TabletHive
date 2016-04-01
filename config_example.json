@@ -4,11 +4,19 @@
     "device_codes": "deviceIds.json",
     "endpoints": {
         "get_rides": {
-            "url": "/mobile/routes.json?device_code=",
+            "url": "/routes.json?device_code=",
             "delay": 0
         },
         "update_status": {
-            "url": "/mobile/ride_points/",
+            "url": "/ride_points/",
+            "delay": 3
+        },
+        "sign_in": {
+            "url": "/sign_in.json?",
+            "delay": 0
+        },
+        "register": {
+            "url": "/devices",
             "delay": 0
         }
     }

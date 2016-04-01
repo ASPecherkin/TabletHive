@@ -12,6 +12,7 @@ import (
 	"time"
 
 	config "github.com/ASPecherkin/TabletHive/hiveConfig"
+	result "github.com/ASPecherkin/TabletHive/storeResults"
 	"github.com/davecgh/go-spew/spew"
 )
 
@@ -63,17 +64,45 @@ type ServiceObject struct {
 }
 
 // Device one unit of hive
+//  "device":{"name":"", "device_code":"nomer", "registration_id":"id"}
+//curl -H 'Content-Type: application/json'  -X POST "https://strela-dev-alpha.at-consulting.ru/mobile/devices" -d '{"device":{"name":"test","device_code":"1", "registration_id":"45"}' -v
 type Device struct {
 	ID         string
+	Name       string
 	Token      string
 	RespObj    Ride
 	Rawresp    string
 	StatusCode int
+	Login      string
 	ch         chan string
 }
 
+// InitDevice generate all needed data for Device
+func (t *Device) InitDevice(cfg *config.HiveConfig) error {
+	type responce struct {
+		Code     string `json:"code"`
+		MsgError string `json:"msgError"`
+		Login    string `json:"login"`
+		Token    string `json:"token"`
+	}
+	type device struct {
+		Name       string `json:"name"`
+		DeviceCode string `json:"device_code"`
+		RegID      string `json:"registration_id"`
+	}
+	//  client := &http.Client{}
+	url := strings.Join(append([]string{cfg.ServerURL, cfg.Endpoints["register"].URL}), "")
+	req, err := http.NewRequest("POST", url, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	return nil
+}
+
 // GetRide create connect amd get ride for that token
-func (t *Device) GetRide(wg *sync.WaitGroup, cfg *config.HiveConfig, res chan Result) error {
+func (t *Device) GetRide(wg *sync.WaitGroup, cfg *config.HiveConfig, res chan result.Result) error {
 	defer wg.Done()
 	client := &http.Client{}
 	url := strings.Join(append([]string{cfg.ServerURL, cfg.Endpoints["get_rides"].URL, t.ID}), "")
@@ -81,7 +110,7 @@ func (t *Device) GetRide(wg *sync.WaitGroup, cfg *config.HiveConfig, res chan Re
 	if err != nil {
 		return err
 	}
-	request.Header.Add("HTTP-AUTH-TOKEN", t.Token)
+	request.Header.Add("X-Sadira-Auth-Token", t.Token)
 	time.Sleep(time.Duration(cfg.Endpoints["get_rides"].Delay))
 	start := time.Now()
 	responce, err := client.Do(request)
@@ -89,7 +118,7 @@ func (t *Device) GetRide(wg *sync.WaitGroup, cfg *config.HiveConfig, res chan Re
 		log.Fatal(err)
 	}
 	jsonData, err := ioutil.ReadAll(responce.Body)
-	res <- Result{RequestType: "GET_RIDE", AuthToken: t.Token, RequestURL: url, RequestStatus: responce.StatusCode, ProcessedTime: time.Since(start).Seconds()}
+	res <- result.Result{RequestType: "GET_RIDE", AuthToken: t.Token, RequestURL: url, RequestStatus: responce.StatusCode, ProcessedTime: time.Since(start).Seconds()}
 	defer responce.Body.Close()
 	if err != nil && err != io.EOF {
 		fmt.Println("error reading from responce Body", err)

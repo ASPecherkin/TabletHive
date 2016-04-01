@@ -16,27 +16,12 @@ import (
 	"sync"
 	"time"
 
+	config "github.com/ASPecherkin/TabletHive/hiveConfig"
+	result "github.com/ASPecherkin/TabletHive/storeResults"
 	"github.com/ASPecherkin/TabletHive/tablet"
 )
 
-// Authtokens stores json represent array of tokens
-type Authtokens struct {
-	Tokens []string `json:"tokens"`
-}
-
-type deviceIds struct {
-	IDs []string `json:"device_ids"`
-}
-
-type sadiraToken struct {
-	deviceID string `json:"device_id"`
-	Code     string `json:"code"`
-	MsgError string `json:"msgError"`
-	Login    string `json:"login"`
-	Token    string `json:"token"`
-}
-
-func getSadiraToken(cfg *HiveConfig) {
+func getSadiraToken(cfg *config.HiveConfig) {
 	content, err := ioutil.ReadFile(cfg.DeviceCodes)
 	if err != nil {
 		log.Fatalf("Could not read device ids file %s with error %s ", cfg.DeviceCodes, err)
@@ -48,7 +33,7 @@ func getSadiraToken(cfg *HiveConfig) {
 	if err != nil {
 		log.Fatalln(err)
 	}
-	st := make([]sadiraToken, 0, 5)
+	st := make([]sadiraUser, 0, 5)
 	client := &http.Client{}
 	for _, id := range ids.IDs {
 		url := strings.Join(append([]string{cfg.ServerURL, cfg.Endpoints["sign_in"].URL, "login=strela_operator", "&device_code=", id}), "")
@@ -64,7 +49,7 @@ func getSadiraToken(cfg *HiveConfig) {
 			log.Fatalln(err)
 		}
 		jsonData, err := ioutil.ReadAll(resp.Body)
-		token := sadiraToken{deviceID: id}
+		token := sadiraUser{DeviceID: id}
 		err = json.Unmarshal([]byte(jsonData), &token)
 		if token.Code == "ok" {
 			st = append(st, token)
@@ -76,7 +61,7 @@ func getSadiraToken(cfg *HiveConfig) {
 }
 
 // ConsumeResults will store all of results in one HiveResults
-func ConsumeResults(input chan Result, cfg *HiveConfig, testResult *HiveResults) {
+func ConsumeResults(input chan result.Result, cfg *config.HiveConfig, testResult *result.HiveResults) {
 	for i := range input {
 		testResult.Lock()
 		switch i.RequestType {
@@ -94,8 +79,8 @@ func ConsumeResults(input chan Result, cfg *HiveConfig, testResult *HiveResults)
 }
 
 // getTokens read file from path and stores they in tokens
-func getTokens(path string) (tokens Authtokens, err error) {
-	tokens = Authtokens{}
+func getTokens(path string) (tokens config.Authtokens, err error) {
+	tokens = config.Authtokens
 	content, err := ioutil.ReadFile(path)
 	if err != nil {
 		fmt.Println("error while open file with tokens", err)
@@ -105,19 +90,8 @@ func getTokens(path string) (tokens Authtokens, err error) {
 	return tokens, nil
 }
 
-// GetConfigJSON func get full path to config.json and store it in HiveConfig struct
-func GetConfigJSON(jsonFile string) (cfg HiveConfig, err error) {
-	jsonDoc, err := ioutil.ReadFile(jsonFile)
-	if err != nil {
-		log.Fatalf("Could not read config file: %s ", err)
-		return
-	}
-	err = json.Unmarshal(jsonDoc, &cfg)
-	return cfg, err
-}
-
 // ConsumeRidePoints func create serias of request emulates real status updating
-func ConsumeRidePoints(authToken string, points []tablet.RidePoint, wg *sync.WaitGroup, cfg *HiveConfig, res chan Result) error {
+func ConsumeRidePoints(authToken string, points []tablet.RidePoint, wg *sync.WaitGroup, cfg *config.HiveConfig, res chan result.Result) error {
 	defer wg.Done()
 	client := &http.Client{}
 	requestURL := cfg.ServerURL + cfg.Endpoints["update_status"].URL
@@ -135,7 +109,7 @@ func ConsumeRidePoints(authToken string, points []tablet.RidePoint, wg *sync.Wai
 		if err != nil {
 			log.Fatalln(err)
 		}
-		res <- Result{RequestType: "CONSUME", AuthToken: authToken, RequestURL: t, RequestStatus: resp.StatusCode, Responce: string(jsonData), ProcessedTime: time.Since(start).Seconds()}
+		res <- result.Result{RequestType: "CONSUME", AuthToken: authToken, RequestURL: t, RequestStatus: resp.StatusCode, Responce: string(jsonData), ProcessedTime: time.Since(start).Seconds()}
 		if err != nil {
 			log.Panicln(err)
 			os.Exit(1)
@@ -151,7 +125,7 @@ var memprofile = flag.String("memprofile", "", "write mem profile to file")
 func main() {
 	start := time.Now()
 	fmt.Fprintf(os.Stdout, "We start at: %v\n", start)
-	cfg, err := GetConfigJSON("./config.json")
+	cfg, err := config.GetConfigJSON("./config.json")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -173,17 +147,17 @@ func main() {
 	}
 	var wg sync.WaitGroup
 	tokens, err := getTokens(cfg.TokensPath)
-	hive := make([]TabletClient, 0, 3000)
+	hive := make([]tablet.Device, 0, 3000)
 	if err != nil {
 		fmt.Println("error while read tokens.json", err)
 	}
 	getSadiraToken(&cfg)
 	for k, v := range tokens.Tokens[0:] {
-		hive = append(hive, TabletClient{ID: v, Token: v, DeviceID: strconv.Itoa(k + 1)})
+		hive = append(hive, tablet.Device{Token: v, ID: strconv.Itoa(k + 1)})
 	}
 	fmt.Printf("we have %d tokens \n", len(hive))
-	res := make(chan Result, 5)
-	testCase := HiveResults{When: start.String()}
+	res := make(chan result.Result, 5)
+	testCase := result.HiveResults{When: start.String()}
 	go ConsumeResults(res, &cfg, &testCase)
 	for k := range hive {
 		wg.Add(1)
