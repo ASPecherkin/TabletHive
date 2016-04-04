@@ -107,7 +107,7 @@ func main() {
         fmt.Printf("Login %s with token: %s \n",Devises[k].Login,Devises[k].Token)
     }
 }
-
+// TODO take only useful code from that and clean
 // func main() {
 // 	start := time.Now()
 // 	fmt.Fprintf(os.Stdout, "We start at: %v\n", start)

@@ -67,7 +67,6 @@ type ServiceObject struct {
 }
 
 // Device one unit of hive
-//  "device":{"name":"", "device_code":"nomer", "registration_id":"id"}
 type Device struct {
 	ID         string
 	Name       string
@@ -121,7 +120,6 @@ func (t *Device) InitDevice(cfg *config.HiveConfig) error {
 
 // GetSadiraToken generate auth token for device
 func (t *Device) GetSadiraToken(cfg *config.HiveConfig) {
-	// {"code":"ok","msgError":null,"login":"10000","token":"29e2b51f-4c08-4b73-a4f3-4cb98aec6557"}
 	type token struct {
 		Code      string `json:"code"`
 		MsgError  string `json:"msgError"`
